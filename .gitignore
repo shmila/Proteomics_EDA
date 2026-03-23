@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Claude Code
+.claude/
+
+# Docs (local-only, will be replaced by .md when paper is submitted)
+docs/
+
+# Local-only scripts and notebooks
+num_of_tiles.py
+Appendix 1.ipynb
+weak_supervision_label_predictor/Untitled.ipynb
+weak_supervision_label_predictor/fix_gelsolin_paths.py
