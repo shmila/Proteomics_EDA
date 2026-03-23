@@ -12,9 +12,9 @@ from protein_expression_model import TileDataset, ProteinExpressionModel
 from torch.utils.data import DataLoader
 
 # Define global paths
-THESIS_DIR = Path(r"C:\Users\eliran.shmi\Documents\Thesis")
+THESIS_DIR = Path(r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis")
 DATASET_DIR = THESIS_DIR / "dataset"
-TILES_DATASET_DIR = DATASET_DIR / "tiles_dataset_100x100"
+# TILES_DATASET_DIR = DATASET_DIR / "tiles_dataset_100x100"
 
 
 class ProteinExpressionEvaluator:
@@ -649,7 +649,7 @@ def create_aggregate_plots(slide_metrics_df, correlations, output_dir):
     neg_data = slide_metrics_df[slide_metrics_df['true_label'] == 0]['positive_ratio']
     pos_data = slide_metrics_df[slide_metrics_df['true_label'] == 1]['positive_ratio']
 
-    axes[0].boxplot([neg_data, pos_data], tick_labels=['Negative', 'Positive'])
+    axes[0].boxplot([neg_data, pos_data], labels=['Negative', 'Positive'])
     axes[0].set_title('Tile-Level Predictions')
     axes[0].set_ylabel('Ratio of Positive Predictions')
 
@@ -657,7 +657,7 @@ def create_aggregate_plots(slide_metrics_df, correlations, output_dir):
     neg_data = slide_metrics_df[slide_metrics_df['true_label'] == 0]['mean_prediction']
     pos_data = slide_metrics_df[slide_metrics_df['true_label'] == 1]['mean_prediction']
 
-    axes[1].boxplot([neg_data, pos_data], tick_labels=['Negative', 'Positive'])
+    axes[1].boxplot([neg_data, pos_data], labels=['Negative', 'Positive'])
     axes[1].set_title('Slide-Level Predictions')
     axes[1].set_ylabel('Mean Prediction')
 
@@ -669,7 +669,7 @@ def create_aggregate_plots(slide_metrics_df, correlations, output_dir):
     neg_data = patient_metrics[patient_metrics['true_label'] == 0]['mean_prediction']
     pos_data = patient_metrics[patient_metrics['true_label'] == 1]['mean_prediction']
 
-    axes[2].boxplot([neg_data, pos_data], tick_labels=['Negative', 'Positive'])
+    axes[2].boxplot([neg_data, pos_data], labels=['Negative', 'Positive'])
     axes[2].set_title('Patient-Level Predictions')
     axes[2].set_ylabel('Mean Prediction')
 
@@ -932,12 +932,12 @@ def format_metrics_table(metrics):
 
 
 if __name__ == "__main__":
-    PROTEIN_NAME = " Thioredoxin"
+    PROTEIN_NAME = " Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"
     # PROTEIN_NAME = " Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"
     # PROTEIN_NAME = " Annexin A7"
     NORM_TYPE = "Intensity"
     # NORM_TYPE = "LFQ"
-    TIMESTAMP = "20250123_091022"  # Replace with actual timestamp
+    # TIMESTAMP = "20250123_091022"  # Replace with actual timestamp
 
     dataset_base_dir = DATASET_DIR / f"tiles_dataset_100x100_{PROTEIN_NAME}_{NORM_TYPE}_cv"
 

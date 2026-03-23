@@ -9,11 +9,13 @@ import pandas as pd
 import json
 import numpy as np
 
+base_dir = r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis"
+
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 
 
 def load_data(norm_type):
-    csv_path = join("CSVs", "top_20_proteins_per_norm_type", f'top_20_proteins_{norm_type}_raw_cv.csv')
+    csv_path = join(base_dir, "CSVs", "top_20_proteins_per_norm_type", f'top_20_proteins_{norm_type}_raw_cv.csv')
     df = pd.read_csv(csv_path)
     df['Patient CVs'] = df['Patient CVs'].apply(eval)
     df['Patient Measurements'] = df['Patient Measurements'].apply(eval)

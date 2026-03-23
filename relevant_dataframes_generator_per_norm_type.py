@@ -39,7 +39,8 @@ def create_relevant_patients_dataframe(protein_file, labels_file, normalization_
 
 
 if __name__ == '__main__':
-    csv_dir = "CSVs"
+    base_dir = r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis"
+    csv_dir = join(base_dir, "CSVs")
     protein_file = join(csv_dir, '2projects combined-proteinGroups-genes.xlsx')
     labels_file = join(csv_dir, '2projects combined labels.xlsx')
 

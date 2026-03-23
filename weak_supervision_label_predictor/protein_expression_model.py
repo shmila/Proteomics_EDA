@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import torch
 import torch.nn as nn
+from torch import GradScaler
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 import torchvision.models as models
@@ -14,11 +15,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 # Define global paths
-THESIS_DIR = Path(r"C:\Users\eliran.shmi\Documents\Thesis")
+THESIS_DIR = Path(r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis")
 TIFFS_DIR = THESIS_DIR / "2021-01-17" / "Tiffs"
 CSVS_DIR = THESIS_DIR / "CSVs"
 DATASET_DIR = THESIS_DIR / "dataset"
-TILES_DATASET_DIR = DATASET_DIR / "tiles_dataset_100x100"
+
+
+# TILES_DATASET_DIR = DATASET_DIR / "tiles_dataset_100x100"
 
 
 class TileDataset(Dataset):
@@ -122,6 +125,7 @@ class ProteinExpressionModel:
         print("\nStarting model training...")
         criterion = nn.BCELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        scaler = GradScaler()
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.1, patience=2, verbose=True
         )
@@ -140,7 +144,7 @@ class ProteinExpressionModel:
             print("-" * 20)
 
             # Training phase
-            train_loss = self._train_epoch(train_loader, criterion, optimizer)
+            train_loss = self._train_epoch(train_loader, criterion, optimizer, scaler)
 
             # Validation phase
             val_loss, val_metrics = self._validate(val_loader, criterion)
@@ -179,7 +183,7 @@ class ProteinExpressionModel:
 
         return training_history
 
-    def _train_epoch(self, train_loader, criterion, optimizer):
+    def _train_epoch(self, train_loader, criterion, optimizer, scaler):
         """Train for one epoch"""
         self.model.train()
         total_loss = 0
@@ -192,8 +196,11 @@ class ProteinExpressionModel:
             optimizer.zero_grad()
             outputs = self.model(images).squeeze()
             loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+
+            # Backward pass with scaled gradients
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)  # Update weights
+            scaler.update()  # Update the scaler
 
             total_loss += loss.item()
             progress_bar.set_postfix({'loss': loss.item()})
@@ -290,74 +297,106 @@ class ProteinExpressionModel:
 def train_protein_model_cv(protein_name, norm_type='Intensity',
                            num_epochs=10, batch_size=32, learning_rate=0.001, n_folds=5):
     """Train model using k-fold cross validation"""
+    # First find the dataset directory with original path
+    original_dataset_dir = DATASET_DIR / f"tiles_dataset_100x100_{protein_name}_{norm_type}_cv"
+    print(f"Looking for dataset directory: {original_dataset_dir}")
+
+    if not original_dataset_dir.exists():
+        raise FileNotFoundError(f"CV Dataset directory not found: {original_dataset_dir}")
+
     print(f"\nTraining model for protein: {protein_name} using {n_folds}-fold CV")
     print(f"Normalization type: {norm_type}")
-
-    # Load dataset info from protein-specific CV directory
-    dataset_dir = DATASET_DIR / f"tiles_dataset_100x100_{protein_name}_{norm_type}_cv"
-    if not dataset_dir.exists():
-        raise FileNotFoundError(f"CV Dataset directory not found: {dataset_dir}")
+    print(f"Using dataset directory: {original_dataset_dir}")
 
     cv_results = []
     for fold in range(n_folds):
         print(f"\nProcessing fold {fold + 1}/{n_folds}")
-        fold_dir = dataset_dir / f"fold_{fold}"
+        fold_dir = original_dataset_dir / f"fold_{fold}"
+        print(f"Fold directory: {fold_dir}")
 
         # Load fold-specific data
         labels_df = pd.read_csv(fold_dir / "dataset_info.csv")
         print(f"Loaded labels for fold {fold}")
 
-        # Create output directory for this fold
+        # Create models directory first
+        models_dir = fold_dir / "models"
+        print(f"Creating models directory: {models_dir}")
+        if not models_dir.exists():
+            try:
+                models_dir.mkdir(exist_ok=True)
+                print(f"Created models directory: {models_dir}")
+            except Exception as e:
+                print(f"Failed to create models directory: {str(e)}")
+                continue
+
+        # Create specific model directory using short name
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_name = f"{protein_name}_{norm_type}_fold{fold}_{timestamp}"
-        output_dir = fold_dir / "models" / model_name
-        output_dir.mkdir(parents=True, exist_ok=True)
+        model_name = f"{protein_name}_{norm_type}_f{fold}_{timestamp}"
+        output_dir = models_dir / model_name
 
-        # Create datasets
-        train_dataset = TileDataset(fold_dir, labels_df, split='train')
-        val_dataset = TileDataset(fold_dir, labels_df, split='validation')
+        try:
+            print(f"Creating model directory: {output_dir}")
+            output_dir.mkdir(exist_ok=True)
+            print(f"Created model directory: {output_dir}")
+        except Exception as e:
+            print(f"Failed to create model directory: {str(e)}")
+            continue
 
-        # Create data loaders
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        try:
+            # Create datasets
+            train_dataset = TileDataset(fold_dir, labels_df, split='train')
+            val_dataset = TileDataset(fold_dir, labels_df, split='validation')
 
-        # Initialize and train model
-        model = ProteinExpressionModel()
-        history = model.train_model(
-            train_loader=train_loader,
-            val_loader=val_loader,
-            num_epochs=num_epochs,
-            learning_rate=learning_rate,
-            save_dir=output_dir
-        )
+            # Create data loaders
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+            val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
-        # Save fold configuration
-        config = {
-            'fold': fold,
-            'protein_name': protein_name,
-            'norm_type': norm_type,
-            'num_epochs': num_epochs,
-            'batch_size': batch_size,
-            'learning_rate': learning_rate,
-            'model_type': model.model_type,
-            'timestamp': timestamp,
-            'train_tiles': len(train_dataset),
-            'val_tiles': len(val_dataset),
-            'train_slides': len(labels_df[labels_df['split'] == 'train']),
-            'val_slides': len(labels_df[labels_df['split'] == 'validation']),
-            'train_patients': len(labels_df[labels_df['split'] == 'train']['patient_id'].unique()),
-            'val_patients': len(labels_df[labels_df['split'] == 'validation']['patient_id'].unique())
-        }
+            # Initialize and train model
+            model = ProteinExpressionModel()
+            history = model.train_model(
+                train_loader=train_loader,
+                val_loader=val_loader,
+                num_epochs=num_epochs,
+                learning_rate=learning_rate,
+                save_dir=output_dir
+            )
 
-        with open(output_dir / "training_config.json", 'w') as f:
-            json.dump(config, f, indent=4)
+            # Save fold configuration
+            config = {
+                'fold': fold,
+                'protein_name': protein_name,
+                'norm_type': norm_type,
+                'num_epochs': num_epochs,
+                'batch_size': batch_size,
+                'learning_rate': learning_rate,
+                'model_type': model.model_type,
+                'timestamp': timestamp,
+                'train_tiles': len(train_dataset),
+                'val_tiles': len(val_dataset),
+                'train_slides': len(labels_df[labels_df['split'] == 'train']),
+                'val_slides': len(labels_df[labels_df['split'] == 'validation']),
+                'train_patients': len(labels_df[labels_df['split'] == 'train']['patient_id'].unique()),
+                'val_patients': len(labels_df[labels_df['split'] == 'validation']['patient_id'].unique())
+            }
 
-        cv_results.append({
-            'fold': fold,
-            'output_dir': output_dir,
-            'history': history,
-            'config': config
-        })
+            with open(output_dir / "training_config.json", 'w') as f:
+                json.dump(config, f, indent=4)
+
+            cv_results.append({
+                'fold': fold,
+                'output_dir': output_dir,
+                'history': history,
+                'config': config
+            })
+
+        except Exception as e:
+            print(f"Error during training: {str(e)}")
+            print(f"All directories in fold directory:")
+            try:
+                print([x.name for x in fold_dir.iterdir()])
+            except Exception as e2:
+                print(f"Error listing directory: {str(e2)}")
+            continue
 
     return cv_results
 
@@ -366,11 +405,19 @@ if __name__ == "__main__":
     # Example usage
     # PROTEIN_NAME = " Thioredoxin"  # Replace with actual protein name
     # PROTEIN_NAMES = [" Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5", " Annexin A7"]
-    PROTEIN_NAMES = [" Thioredoxin"]
+    # PROTEIN_NAMES = [" Thioredoxin"]
     # PROTEIN_NAMES = [" Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"]
-    # NORM_TYPES = ["LFQ", "Intensity"]
-    NORM_TYPES = ["Intensity"]
+    NORM_TYPES = ["LFQ", "Intensity"]
     # NORM_TYPES = ["LFQ"]
+    # NORM_TYPES = ["Intensity"]
+
+    # PROTEIN_NAMES = [" Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"]
+    # PROTEIN_NAMES = [" Actin, cytoplasmic 2"]
+    # PROTEIN_NAMES = [" Annexin A7"]
+    # PROTEIN_NAMES = [" Gelsolin"]
+    # PROTEIN_NAMES = [" 14-3-3 protein beta_alpha"]
+    # PROTEIN_NAMES = [" Cornulin"]
+    PROTEIN_NAMES = [" Proliferation marker protein Ki-67"]
 
     for PROTEIN_NAME in PROTEIN_NAMES:
         for NORM_TYPE in NORM_TYPES:
@@ -378,7 +425,7 @@ if __name__ == "__main__":
                 cv_results = train_protein_model_cv(
                     protein_name=PROTEIN_NAME,
                     norm_type=NORM_TYPE,
-                    num_epochs=10,
+                    num_epochs=20,
                     n_folds=5
                 )
                 print("\nCross-validation training complete!")

@@ -5,6 +5,7 @@ from matplotlib.ticker import ScalarFormatter
 from tqdm import tqdm
 from os.path import join
 
+
 def get_protein_row(protein_name, proteomics_df):
     protein_mask = proteomics_df['Protein names'].str.contains(protein_name, na=False, case=False)
     if not protein_mask.any():
@@ -42,6 +43,7 @@ def process_columns(protein_row, norm_type):
         data.append((patient, position, val))
 
     return sorted(data, key=lambda x: (int(x[0]), int(x[1])))
+
 
 def plot_protein_expression(protein_row, proteomics_df, include_single_samples=False):
     fig, axes = plt.subplots(3, 1, figsize=(20, 15))
@@ -99,7 +101,8 @@ def plot_protein_expression(protein_row, proteomics_df, include_single_samples=F
             start_idx = curr_idx
 
         # Calculate CV of means
-        cv_of_means = (np.std(patient_means_for_cv) / np.mean(patient_means_for_cv)) * 100 if patient_means_for_cv else 0
+        cv_of_means = (np.std(patient_means_for_cv) / np.mean(
+            patient_means_for_cv)) * 100 if patient_means_for_cv else 0
 
         ax = axes[idx]
         ax.scatter(x_coords, y_values, c='blue', s=50, alpha=0.7)
@@ -114,15 +117,15 @@ def plot_protein_expression(protein_row, proteomics_df, include_single_samples=F
             ax.hlines(mean_val, start, end, colors='red', linestyles='--', alpha=0.7)
 
             # Add standard deviation band
-            ax.fill_between(range(start, end+1),
-                        [mean_val - std_val] * (end-start+1),
-                        [mean_val + std_val] * (end-start+1),
-                        color='red', alpha=0.1)
+            ax.fill_between(range(start, end + 1),
+                            [mean_val - std_val] * (end - start + 1),
+                            [mean_val + std_val] * (end - start + 1),
+                            color='red', alpha=0.1)
 
         # Add CV annotation
         ax.text(0.02, 0.98, f'CV of means: {cv_of_means:.2f}%',
-               transform=ax.transAxes, va='top', fontsize=10,
-               bbox=dict(facecolor='white', alpha=0.8))
+                transform=ax.transAxes, va='top', fontsize=10,
+                bbox=dict(facecolor='white', alpha=0.8))
 
         # Calculate overall statistics
         overall_mean = np.mean(y_values)
@@ -134,10 +137,11 @@ def plot_protein_expression(protein_row, proteomics_df, include_single_samples=F
         ax.set_title(f'{norm_type} Normalization')
         ax.set_ylabel('Expression Level')
         ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-        ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
     plt.tight_layout()
     return fig
+
 
 if __name__ == '__main__':
     # protein_name = "DNA-directed RNA polymerases I and III subunit RPAC2"
@@ -154,4 +158,3 @@ if __name__ == '__main__':
         plt.show()
         #     plt.savefig('protein_expression_scatter.png', dpi=300, bbox_inches='tight')
         plt.close()
-

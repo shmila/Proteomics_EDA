@@ -322,7 +322,7 @@ class ProteinSpecificDatasetCreatorCV:
 
 if __name__ == "__main__":
     # Paths
-    THESIS_DIR = Path(r"C:\Users\eliran.shmi\Documents\Thesis")
+    THESIS_DIR = Path(r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis")
     TIFFS_DIR = THESIS_DIR / "2021-01-17" / "Tiffs"
     CSVS_DIR = THESIS_DIR / "CSVs"
     DATASET_DIR = THESIS_DIR / "dataset"
@@ -346,11 +346,16 @@ if __name__ == "__main__":
     # PROTEIN_NAME = " Thioredoxin"
     # PROTEIN_NAME = " Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"
 
-    # PROTEIN_NAMES = [" Annexin A7"]
+    # PROTEIN_NAMES = [" Elongation factor 1-alpha 1; Putative elongation factor 1-alpha-like 3"]
     # NORM_TYPES = ["Intensity", "LFQ"]
 
-    PROTEIN_NAMES = [" Thioredoxin"]
-    NORM_TYPES = ["Intensity"]
+    # PROTEIN_NAMES = [" Ubiquitin-conjugating enzyme E2 L3; Ubiquitin-conjugating enzyme E2 L5"]
+    # PROTEIN_NAMES = [" Gelsolin"]
+    # PROTEIN_NAMES = [" 14-3-3 protein beta/alpha"]
+    # PROTEIN_NAMES = [" Cornulin"]
+    PROTEIN_NAMES = [" Proliferation marker protein Ki-67"]
+    # NORM_TYPES = ["Intensity"]
+    NORM_TYPES = ["LFQ"]
 
     N_FOLDS = 5
 

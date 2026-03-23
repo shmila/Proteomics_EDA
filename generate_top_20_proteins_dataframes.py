@@ -81,7 +81,8 @@ def convert_cv_values(input_file, output_file):
 
 
 if __name__ == '__main__':
-    csv_base_dir = "CSVs"
+    base_dir = r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis"
+    csv_base_dir = join(base_dir, "CSVs")
     protein_analysis_csvs_dir = join(csv_base_dir, "protein_analysis_csvs_dir")
     relevant_dataframes_per_norm_type_dir = join(csv_base_dir, "relevant_dataframes_per_norm_type")
     top_20_proteins_per_norm_type_dir = join(csv_base_dir, "top_20_proteins_per_norm_type")
@@ -103,4 +104,3 @@ if __name__ == '__main__':
 
         convert_cv_values(join(top_20_proteins_per_norm_type_dir, f'top_20_proteins_{norm_type}.csv'),
                           join(top_20_proteins_per_norm_type_dir, f'top_20_proteins_{norm_type}_raw_cv.csv'))
-
