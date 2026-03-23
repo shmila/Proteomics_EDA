@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import json
 from datetime import datetime
-from protein_expression_model import TileDataset, ProteinExpressionModel
+from weak_supervision_label_predictor.model.protein_expression_model import TileDataset, ProteinExpressionModel
 from torch.utils.data import DataLoader
 
 # Define global paths

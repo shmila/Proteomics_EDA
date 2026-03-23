@@ -60,28 +60,43 @@ Proteomics data is analyzed under three independent normalization pipelines: **I
 
 ## Code Architecture
 
-### WSI Processing
-- `wsi_slice_detection_and_alignment.py` → `wsi_slices_processing_pipeline.py` → `process_contoured_wsis.py` — detect tissue regions, align slices, generate averaged outputs (OpenSlide + OpenCV)
-- `tiler.py` — splits WSIs into 100×100 tile grid, filters for tissue content, uses ThreadPoolExecutor
+### Proteomics Analysis (`proteomics_analysis/`)
+- `relevant_dataframes_generator.py` — filters proteomics Excel to patients with ≥3 measurements per normalization type
+- `top_20_proteins_selector.py` — computes intra-patient CV, selects top 20 lowest-CV proteins
+- `expression_distribution_analysis.py` — plots protein expression distributions with statistics
 
 ### ML Pipeline (`weak_supervision_label_predictor/`)
-- `create_protein_specific_dataset.py` / `balanced_dataset_creator.py` — generate 5-fold CV splits (StratifiedGroupKFold) from tiles + proteomics labels
-- `protein_expression_model.py` — ResNet18 model, TileDataset, training loop
-- `evaluation_report_generator.py` — tile/slide/patient-level metrics (largest file, ~40K chars)
-- `multi_run_eval_flow.py` — evaluate multiple runs with different tile samples
-- `multi_run_aggregation_flow.py` — aggregate results across runs and folds
-- `generate_wsi_heatmap.py` — spatial prediction heatmaps overlaid on WSIs
 
-### Data Exploration & Visualization
-- `protein_expression_distribution_analysis.py`, `relevant_dataframes_generator_per_norm_type.py`, `generate_top_20_proteins_dataframes.py` — proteomics EDA and stable protein selection
-- `dash_app.py` — interactive Dash dashboard (Plotly)
-- `standalone_html_dashboard_generator.py` — static HTML reports
+#### Dataset (`dataset/`)
+- `tiler.py` — splits WSIs into 100×100 tile grid, two-stage tissue filtering, ThreadPoolExecutor
+- `protein_dataset_creator.py` — binary labeling + 5-fold StratifiedGroupKFold CV dataset creation
+
+#### Model (`model/`)
+- `protein_expression_model.py` — ResNet18 model, TileDataset, training loop with mixed precision
+
+#### Evaluation (`evaluation/`)
+- `single_run_evaluator.py` — per-fold evaluation with tile/slide/patient-level metrics and correlations
+- `multi_run_evaluator.py` — 20 runs × random tile sampling for robustness testing
+- `multi_run_aggregator.py` — aggregates results across all runs and folds
+
+#### Visualization (`visualization/`)
+- `wsi_heatmap_generator.py` — spatial prediction heatmaps overlaid on WSIs
+
+### Dashboards & Reports (`visualization/`)
+- `dash_app.py` — interactive Dash dashboard for all-patient protein CV analysis
+- `dash_app_tumor.py` — tumor-specific dashboard with distribution plots
+- `standalone_html_generator.py` — static HTML reports with embedded Plotly figures
+
+### Notebooks (`notebooks/`)
+- `appendix_tile_filtering.ipynb` — thesis appendix: mathematical formulation of tile filtering
+- `tile_filtering_walkthrough.ipynb` — step-by-step demonstration of the tile filtering algorithm
+- `tumor_analysis.ipynb` — tumor-specific proteomics CV analysis (unique, no .py equivalent)
 
 ## Running Scripts
 
-No build system or package manager config. Scripts run independently via `python <script>.py`. Each uses `if __name__ == "__main__":` blocks with hardcoded paths pointing to `C:\Users\elira\ShmilaJustSolveIt Dropbox\...\Thesis\`.
+No build system or package manager config. Scripts run independently via `python -m <package.module>` or `python <package>/<script>.py`. Each uses `if __name__ == "__main__":` blocks with hardcoded paths pointing to `C:\Users\elira\ShmilaJustSolveIt Dropbox\...\Thesis\`.
 
-**Dash app**: `python dash_app.py` starts a local web server.
+**Dash app**: `python visualization/dash_app.py` starts a local web server.
 
 ## Key Dependencies
 
@@ -91,5 +106,6 @@ PyTorch, torchvision, OpenSlide, OpenCV (cv2), pandas, numpy, scipy, scikit-lear
 
 - **Patient-level cross-validation**: Splits stratified at patient level to prevent data leakage
 - **ImageNet normalization**: All tile transforms use `Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])`
-- **Parallel processing**: WSI processing uses ProcessPoolExecutor; tiling uses ThreadPoolExecutor
+- **Tiling uses ThreadPoolExecutor** for parallel tile processing
 - **All paths are hardcoded absolute Windows paths** — update when running on a different machine
+- **Cross-package imports**: Evaluation and visualization modules import from `weak_supervision_label_predictor.model.protein_expression_model`

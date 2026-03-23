@@ -9,7 +9,7 @@ from datetime import datetime
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-from protein_expression_model import ProteinExpressionModel
+from weak_supervision_label_predictor.model.protein_expression_model import ProteinExpressionModel
 import json
 
 

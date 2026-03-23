@@ -10,7 +10,7 @@ import seaborn as sns
 from datetime import datetime
 import json
 from tqdm import tqdm
-from protein_expression_model import TileDataset, ProteinExpressionModel
+from weak_supervision_label_predictor.model.protein_expression_model import TileDataset, ProteinExpressionModel
 from torch.utils.data import DataLoader
 
 
