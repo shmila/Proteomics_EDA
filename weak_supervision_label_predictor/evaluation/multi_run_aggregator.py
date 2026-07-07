@@ -3,9 +3,164 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 import seaborn as sns
 from datetime import datetime
 import json
+
+
+# 26 perceptually distinct colors (generated via distinctipy) — one per patient
+PATIENT_COLORS = [
+    '#000000', '#00ff00', '#ff00ff', '#007fff', '#ff7f00',
+    '#7f3f7f', '#52f09a', '#ccfe21', '#3003f6', '#008137',
+    '#ff0000', '#fd77c1', '#00007f', '#8ba4f4', '#86a147',
+    '#00ffff', '#813103', '#a136f7', '#ef007e', '#2e9898',
+    '#efc97e', '#7fffff', '#1146b6', '#64f62a', '#d04b41',
+    '#01cc62',
+]
+
+# Marker shapes for CV folds (5 folds → 5 shapes)
+FOLD_MARKERS = ['o', 's', '^', 'D', 'v']
+
+# Marker shapes for slides within a patient (up to 10)
+SLIDE_MARKERS = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', 'p', 'h']
+
+
+def _assign_patient_colors(patient_ids):
+    """Return {patient_id: color} using the PATIENT_COLORS palette."""
+    return {pid: PATIENT_COLORS[i % len(PATIENT_COLORS)]
+            for i, pid in enumerate(sorted(patient_ids))}
+
+
+def _plot_correlation_pair(slides_df, metrics, patient_colors, marker_mode, ax1, ax2):
+    """Draw the two correlation scatter subplots (positive_ratio + mean_prediction)."""
+    unique_patients = sorted(slides_df['patient_id'].unique())
+
+    if marker_mode == 'fold':
+        for patient_id in unique_patients:
+            pdata = slides_df[slides_df['patient_id'] == patient_id]
+            for fold in sorted(pdata['fold'].unique()):
+                fdata = pdata[pdata['fold'] == fold]
+                marker = FOLD_MARKERS[int(fold) % len(FOLD_MARKERS)]
+                ax1.scatter(fdata['expression_value'], fdata['positive_ratio'],
+                            alpha=0.5, color=patient_colors[patient_id],
+                            marker=marker, s=35, edgecolors='none')
+                ax2.scatter(fdata['expression_value'], fdata['mean_prediction'],
+                            alpha=0.5, color=patient_colors[patient_id],
+                            marker=marker, s=35, edgecolors='none')
+
+    elif marker_mode == 'slide':
+        patient_slides = slides_df.groupby('patient_id')['slide_id'].apply(
+            lambda x: sorted(x.unique())).to_dict()
+        for patient_id in unique_patients:
+            pdata = slides_df[slides_df['patient_id'] == patient_id]
+            slides_list = patient_slides[patient_id]
+            for si, slide_id in enumerate(slides_list):
+                sdata = pdata[pdata['slide_id'] == slide_id]
+                marker = 'o' if len(slides_list) == 1 else SLIDE_MARKERS[si % len(SLIDE_MARKERS)]
+                ax1.scatter(sdata['expression_value'], sdata['positive_ratio'],
+                            alpha=0.5, color=patient_colors[patient_id],
+                            marker=marker, s=35, edgecolors='none')
+                ax2.scatter(sdata['expression_value'], sdata['mean_prediction'],
+                            alpha=0.5, color=patient_colors[patient_id],
+                            marker=marker, s=35, edgecolors='none')
+
+    corr1 = metrics['positive_ratio_correlations']
+    ax1.set_title('Expression vs Positive Tiles Ratio\n' +
+                  f'r={corr1["pearson_r"]:.3f} (p={corr1["pearson_p"]:.1e})\n' +
+                  f'ρ={corr1["spearman_r"]:.3f} (p={corr1["spearman_p"]:.1e})',
+                  fontsize=16)
+    ax1.set_xlabel('Expression Value', fontsize=14)
+    ax1.set_ylabel('Ratio of Positive Tiles', fontsize=14)
+    ax1.tick_params(axis='both', labelsize=12)
+
+    corr2 = metrics['mean_prediction_correlations']
+    ax2.set_title('Expression vs Mean Prediction\n' +
+                  f'r={corr2["pearson_r"]:.3f} (p={corr2["pearson_p"]:.1e})\n' +
+                  f'ρ={corr2["spearman_r"]:.3f} (p={corr2["spearman_p"]:.1e})',
+                  fontsize=16)
+    ax2.set_xlabel('Expression Value', fontsize=14)
+    ax2.set_ylabel('Mean Prediction', fontsize=14)
+    ax2.tick_params(axis='both', labelsize=12)
+
+
+def _add_fold_legend(fig):
+    handles = [mlines.Line2D([], [], color='gray', marker=m, linestyle='None',
+                              markersize=8, label=f'Fold {i}')
+               for i, m in enumerate(FOLD_MARKERS)]
+    fig.legend(handles=handles, loc='center right', fontsize=11, frameon=True,
+               title='Fold', title_fontsize=12, borderpad=1)
+
+
+def _add_slide_legend(slides_df, patient_colors, fig):
+    patient_slides = slides_df.groupby('patient_id')['slide_id'].apply(
+        lambda x: sorted(x.unique())).to_dict()
+    handles = []
+    for pid in sorted(patient_slides.keys()):
+        slist = patient_slides[pid]
+        if len(slist) > 1:
+            for si, sid in enumerate(slist):
+                m = SLIDE_MARKERS[si % len(SLIDE_MARKERS)]
+                handles.append(mlines.Line2D([], [], color=patient_colors[pid], marker=m,
+                                             linestyle='None', markersize=8, label=f'{sid}'))
+    fig.legend(handles=handles, loc='center right', fontsize=9, frameon=True,
+               title='Slide', title_fontsize=11, borderpad=1)
+
+
+def _compute_correlation_stats(slides_df):
+    """Compute Pearson r and Spearman ρ (both two-tailed p-values) for the two metrics."""
+    pearson_r_pr, pearson_p_pr = stats.pearsonr(slides_df['expression_value'],
+                                                 slides_df['positive_ratio'])
+    spearman_r_pr, spearman_p_pr = stats.spearmanr(slides_df['expression_value'],
+                                                    slides_df['positive_ratio'])
+    pearson_r_mp, pearson_p_mp = stats.pearsonr(slides_df['expression_value'],
+                                                 slides_df['mean_prediction'])
+    spearman_r_mp, spearman_p_mp = stats.spearmanr(slides_df['expression_value'],
+                                                    slides_df['mean_prediction'])
+    return {
+        'positive_ratio_correlations': {
+            'pearson_r': pearson_r_pr, 'pearson_p': pearson_p_pr,
+            'spearman_r': spearman_r_pr, 'spearman_p': spearman_p_pr,
+        },
+        'mean_prediction_correlations': {
+            'pearson_r': pearson_r_mp, 'pearson_p': pearson_p_mp,
+            'spearman_r': spearman_r_mp, 'spearman_p': spearman_p_mp,
+        },
+    }
+
+
+def create_correlation_plots(slides_df, output_dir, metrics=None):
+    """
+    Produce the two correlation-plot versions (by_fold and by_slide).
+
+    Args:
+        slides_df: DataFrame with columns patient_id, slide_id, fold, expression_value,
+                   positive_ratio, mean_prediction.
+        output_dir: Path where PNGs will be written.
+        metrics: Optional dict containing 'positive_ratio_correlations' and
+                 'mean_prediction_correlations'. If None, correlations are computed
+                 directly from slides_df.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if metrics is None:
+        metrics = _compute_correlation_stats(slides_df)
+
+    patient_colors = _assign_patient_colors(slides_df['patient_id'].unique())
+
+    for marker_mode in ['fold', 'slide']:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        fig.subplots_adjust(right=0.90)
+        _plot_correlation_pair(slides_df, metrics, patient_colors, marker_mode, ax1, ax2)
+        if marker_mode == 'fold':
+            _add_fold_legend(fig)
+        else:
+            _add_slide_legend(slides_df, patient_colors, fig)
+        suffix = 'by_fold' if marker_mode == 'fold' else 'by_slide'
+        plt.savefig(output_dir / f'correlation_plots__{suffix}.png',
+                    dpi=300, bbox_inches='tight')
+        plt.close()
 
 
 def get_latest_multi_run_eval(dataset_dir):
@@ -21,42 +176,12 @@ def get_latest_multi_run_eval(dataset_dir):
 
 
 def create_all_runs_plots(slides_df, tiles_df, metrics, output_dir):
-    """Create plots aggregating results across all runs from all folds"""
-
-    # 1. All-runs correlation plots (one point per run per slide)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
-
-    # Expression vs Positive Ratio
-    for slide_id in slides_df['slide_id'].unique():
-        slide_data = slides_df[slides_df['slide_id'] == slide_id]
-        ax1.scatter(slide_data['expression_value'], slide_data['positive_ratio'],
-                    alpha=0.2, label=f'Slide {slide_id}' if len(ax1.get_legend_handles_labels()[1]) == 0 else "")
-
-    corr = metrics['positive_ratio_correlations']
-    ax1.set_title(f'Expression vs Positive Tiles Ratio (All Runs)\n' +
-                  f'r={corr["pearson_r"]:.3f} (right-tailed p={corr["pearson_p"]:.1e})\n' +
-                  f'ρ={corr["spearman_r"]:.3f} (right-tailed p={corr["spearman_p"]:.1e})')
-    ax1.set_xlabel('Expression Value')
-    ax1.set_ylabel('Ratio of Positive Tiles')
-
-    # Expression vs Mean Prediction
-    for slide_id in slides_df['slide_id'].unique():
-        slide_data = slides_df[slides_df['slide_id'] == slide_id]
-        ax2.scatter(slide_data['expression_value'], slide_data['mean_prediction'],
-                    alpha=0.2, label=f'Slide {slide_id}' if len(ax2.get_legend_handles_labels()[1]) == 0 else "")
-
-    corr = metrics['mean_prediction_correlations']
-    ax2.set_title(f'Expression vs Mean Prediction (All Runs)\n' +
-                  f'r={corr["pearson_r"]:.3f} (right-tailed p={corr["pearson_p"]:.1e})\n' +
-                  f'ρ={corr["spearman_r"]:.3f} (right-tailed p={corr["spearman_p"]:.1e})')
-    ax2.set_xlabel('Expression Value')
-    ax2.set_ylabel('Mean Prediction')
-
-    plt.tight_layout()
-    plt.savefig(output_dir / "all_runs_correlation_plots.png", dpi=300, bbox_inches='tight')
-    plt.close()
-
-    # 2. Distribution of correlations across all runs
+    """
+    Create per-run correlation distributions, p-value distributions, and box plots.
+    (The correlation scatter plots are produced by create_correlation_plots, called
+    from create_aggregated_plots.)
+    """
+    # Distribution of correlations across all runs
     run_correlations = []
     for fold in slides_df['fold'].unique():
         for run in slides_df[slides_df['fold'] == fold]['run'].unique():
@@ -398,41 +523,10 @@ def calculate_aggregated_metrics(slides_df, tiles_df):
 
 def create_aggregated_plots(slides_df, tiles_df, metrics, output_dir):
     """Create comprehensive visualization of aggregated results"""
-    # Set style
     plt.style.use('default')
 
-    # 1. Correlation plots with patient coloring
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-
-    # Expression vs Positive Ratio
-    corr = metrics['positive_ratio_correlations']
-    for patient_id in slides_df['patient_id'].unique():
-        patient_data = slides_df[slides_df['patient_id'] == patient_id]
-        ax1.scatter(patient_data['expression_value'], patient_data['positive_ratio'],
-                    alpha=0.5, label=f'Patient {patient_id}')
-
-    ax1.set_title(f'Expression vs Positive Tiles Ratio\n' +
-                  f'r={corr["pearson_r"]:.3f} (p={corr["pearson_p"]:.1e})\n' +
-                  f'ρ={corr["spearman_r"]:.3f} (p={corr["spearman_p"]:.1e})')
-    ax1.set_xlabel('Expression Value')
-    ax1.set_ylabel('Ratio of Positive Tiles')
-
-    # Expression vs Mean Prediction
-    corr = metrics['mean_prediction_correlations']
-    for patient_id in slides_df['patient_id'].unique():
-        patient_data = slides_df[slides_df['patient_id'] == patient_id]
-        ax2.scatter(patient_data['expression_value'], patient_data['mean_prediction'],
-                    alpha=0.5, label=f'Patient {patient_id}')
-
-    ax2.set_title(f'Expression vs Mean Prediction\n' +
-                  f'r={corr["pearson_r"]:.3f} (p={corr["pearson_p"]:.1e})\n' +
-                  f'ρ={corr["spearman_r"]:.3f} (p={corr["spearman_p"]:.1e})')
-    ax2.set_xlabel('Expression Value')
-    ax2.set_ylabel('Mean Prediction')
-
-    plt.tight_layout()
-    plt.savefig(output_dir / "aggregated_correlation_plots.png", dpi=300, bbox_inches='tight')
-    plt.close()
+    # Correlation scatter plots (by_fold and by_slide versions) \u2014 done in a single place
+    create_correlation_plots(slides_df, output_dir, metrics=metrics)
 
     # 2. Per-fold correlation distributions
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
@@ -521,8 +615,7 @@ def create_aggregated_plots(slides_df, tiles_df, metrics, output_dir):
 
 if __name__ == "__main__":
     # Configuration
-    THESIS_DIR = Path(r"C:\Users\elira\ShmilaJustSolveIt Dropbox\Eliran Shmila\PC\Documents\Thesis")
-    DATASET_DIR = THESIS_DIR / "dataset"
+    from config import DATASET_DIR
 
     # PROTEIN_NAME = " Thioredoxin"
     # PROTEIN_NAME = " Elongation factor 1-alpha 1"
