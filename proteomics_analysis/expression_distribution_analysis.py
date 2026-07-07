@@ -1,160 +1,166 @@
+"""
+Generate a 3-panel expression distribution plot for a single protein,
+showing per-patient measurements under all three normalization types
+(Intensity, iBAQ, LFQ).
+
+Set the active protein by (un)commenting one PROTEIN_NAME line in main().
+"""
+
+import os
+from os.path import join
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.ticker import ScalarFormatter
-from tqdm import tqdm
-from os.path import join
+
+from config import CSVS_DIR
 
 
-def get_protein_row(protein_name, proteomics_df):
-    protein_mask = proteomics_df['Protein names'].str.contains(protein_name, na=False, case=False)
-    if not protein_mask.any():
-        print(f"Protein {protein_name} not found.")
-        print("Available proteins:")
-        print(proteomics_df['Protein names'].head())
-        return None
-    return proteomics_df[protein_mask].iloc[0]
+def load_protein_data(csv_dir):
+    """Load the pre-filtered proteomics tables for all three normalization types."""
+    data = {}
+    for norm_type in ['Intensity', 'iBAQ', 'LFQ']:
+        filepath = join(csv_dir, f'relevant_patients_proteomics_table_{norm_type}.csv')
+        data[norm_type] = pd.read_csv(filepath)
+    return data
 
 
-def process_columns(protein_row, norm_type):
-    """
-    norm_type: 'Intensity', 'iBAQ', or 'LFQ'
-    Returns: list of tuples (patient, position, val)
-    """
-    prefix = {
-        'Intensity': 'Intensity ',
-        'iBAQ': 'iBAQ ',
-        'LFQ': 'LFQ intensity '
-    }[norm_type]
-
-    # Get Lysis columns only
-    expr_cols = {col: val for col, val in protein_row.items()
-                 if col.startswith(prefix) and
-                 col.endswith('L') and
-                 not pd.isna(val) and
-                 val != 0}
-
-    data = []
-    for col, val in expr_cols.items():
-        parts = col.replace(prefix, '').split('_')
-        patient = parts[0]
-        pos_method = parts[1]
-        position = pos_method[:-1]  # Remove 'L'
-        data.append((patient, position, val))
-
-    return sorted(data, key=lambda x: (int(x[0]), int(x[1])))
+def get_protein_row(protein_name, df):
+    mask = df['Protein names'] == protein_name
+    if not mask.any():
+        mask = df['Protein names'].str.contains(protein_name.strip(), na=False, case=False)
+    return df[mask].iloc[0] if mask.any() else None
 
 
-def plot_protein_expression(protein_row, proteomics_df, include_single_samples=False):
+def extract_patient_measurements(protein_row, df, norm_type):
+    if norm_type == 'LFQ':
+        lysis_cols = [c for c in df.columns if c.startswith('LFQ intensity') and c.endswith('L')]
+    else:
+        lysis_cols = [c for c in df.columns if c.startswith(norm_type) and c.endswith('L')]
+
+    patient_measurements = {}
+    for col in lysis_cols:
+        if norm_type == 'LFQ':
+            patient = col.split(' ')[-1].split('_')[0]
+        else:
+            patient = col.split(' ')[1].split('_')[0]
+        val = protein_row[col]
+        if patient not in patient_measurements:
+            patient_measurements[patient] = []
+        patient_measurements[patient].append(val)
+    return patient_measurements
+
+
+def plot_protein_expression(protein_name, data_dict, output_dir=None):
+    """Create a 3-panel expression distribution plot (one per normalization type)."""
     fig, axes = plt.subplots(3, 1, figsize=(20, 15))
-    fig.suptitle(f'Expression Levels for {protein_row["Protein names"]} Across Patients and Positions')
+    display_name = protein_name.strip()
+    fig.suptitle(f'Expression Levels for {display_name} Across Patients',
+                 fontsize=22, fontweight='bold')
 
-    norm_types = ['Intensity', 'iBAQ', 'LFQ']
+    for idx, norm_type in enumerate(['Intensity', 'iBAQ', 'LFQ']):
+        df = data_dict[norm_type]
+        protein_row = get_protein_row(protein_name, df)
 
-    for idx, norm_type in enumerate(tqdm(norm_types, desc="Processing normalization types")):
-        data = process_columns(protein_row, norm_type)
-
-        if not data:
-            print(f"No data found for {norm_type}")
+        if protein_row is None:
+            print(f"Protein '{protein_name}' not found in {norm_type} data")
             continue
 
-        x_coords = list(range(len(data)))
-        y_values = [val for patient, pos, val in data]
-        labels = [f"({p},{pos}L)" for p, pos, _ in data]
+        patient_measurements = extract_patient_measurements(protein_row, df, norm_type)
 
-        # Group measurements by patient
-        patient_measurements = {}
-        for patient, pos, val in data:
-            if patient not in patient_measurements:
-                patient_measurements[patient] = []
-            patient_measurements[patient].append(val)
+        all_points = []
+        for patient in sorted(patient_measurements.keys(), key=int):
+            for i, val in enumerate(patient_measurements[patient]):
+                all_points.append((patient, i, val))
 
-        # Calculate stats based on measurement count criteria
+        x_coords = list(range(len(all_points)))
+        y_values = [p[2] for p in all_points]
+
+        patient_means = []
         patient_ranges = []
         patient_stats = {}
-        start_idx = 0
+        patient_tick_positions = []
+        patient_tick_labels = []
         curr_idx = 0
-        patient_means_for_cv = []
 
-        for patient, measurements in patient_measurements.items():
+        for patient in sorted(patient_measurements.keys(), key=int):
+            measurements = patient_measurements[patient]
             mean_val = np.mean(measurements)
+            std_val = np.std(measurements)
+            n = len(measurements)
+            cv = (std_val / mean_val) * 100 if mean_val != 0 else 0
 
-            # Decide whether to include this patient's mean in CV calculation
-            if include_single_samples or len(measurements) >= 3:
-                patient_means_for_cv.append(mean_val)
+            patient_means.append(mean_val)
+            start = curr_idx
+            end = curr_idx + n - 1
+            patient_ranges.append((start, end))
+            patient_stats[patient] = {'mean': mean_val, 'std': std_val, 'cv': cv, 'n': n}
 
-            # Only add visualization elements for patients with multiple measurements
-            if len(measurements) > 1:
-                std_val = np.std(measurements)
-                cv = (std_val / mean_val) * 100 if mean_val != 0 else 0
-                end_idx = curr_idx + len(measurements) - 1
+            patient_tick_positions.append((start + end) / 2)
+            patient_tick_labels.append(patient)
 
-                patient_ranges.append((start_idx, end_idx))
-                patient_stats[patient] = {
-                    'mean': mean_val,
-                    'std': std_val,
-                    'cv': cv,
-                    'n': len(measurements)
-                }
+            curr_idx += n
 
-            curr_idx += len(measurements)
-            start_idx = curr_idx
-
-        # Calculate CV of means
-        cv_of_means = (np.std(patient_means_for_cv) / np.mean(
-            patient_means_for_cv)) * 100 if patient_means_for_cv else 0
+        valid_means = [m for m in patient_means if m > 0]
+        cv_of_means = (np.std(valid_means) / np.mean(valid_means)) * 100 if valid_means else 0
 
         ax = axes[idx]
-        ax.scatter(x_coords, y_values, c='blue', s=50, alpha=0.7)
+        ax.scatter(x_coords, y_values, c='blue', s=60, alpha=0.7)
 
-        # Mean lines and std bands for patients with multiple measurements
-        for (start, end), patient in zip(patient_ranges, patient_stats.keys()):
+        for (start, end), patient in zip(patient_ranges, sorted(patient_measurements.keys(), key=int)):
             stats = patient_stats[patient]
-            mean_val = stats['mean']
-            std_val = stats['std']
-
-            # Plot mean line
-            ax.hlines(mean_val, start, end, colors='red', linestyles='--', alpha=0.7)
-
-            # Add standard deviation band
+            ax.hlines(stats['mean'], start, end, colors='red', linestyles='--', alpha=0.7)
             ax.fill_between(range(start, end + 1),
-                            [mean_val - std_val] * (end - start + 1),
-                            [mean_val + std_val] * (end - start + 1),
+                            [stats['mean'] - stats['std']] * (end - start + 1),
+                            [stats['mean'] + stats['std']] * (end - start + 1),
                             color='red', alpha=0.1)
 
-        # Add CV annotation
-        ax.text(0.02, 0.98, f'CV of means: {cv_of_means:.2f}%',
-                transform=ax.transAxes, va='top', fontsize=10,
+        ax.axhline(y=np.mean(y_values), color='green', linestyle='-', alpha=0.5)
+
+        ax.text(0.02, 0.98, f'CV of patient means: {cv_of_means:.2f}%',
+                transform=ax.transAxes, va='top', fontsize=16,
                 bbox=dict(facecolor='white', alpha=0.8))
 
-        # Calculate overall statistics
-        overall_mean = np.mean(y_values)
-        ax.axhline(y=overall_mean, color='green', linestyle='-', alpha=0.5)
-
-        # Formatting
-        ax.set_xticks(x_coords)
-        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
-        ax.set_title(f'{norm_type} Normalization')
-        ax.set_ylabel('Expression Level')
+        ax.set_xticks(patient_tick_positions)
+        ax.set_xticklabels(patient_tick_labels, fontsize=14)
+        ax.set_xlabel('Patient', fontsize=16)
+        ax.set_title(f'{norm_type} Normalization', fontsize=20)
+        ax.set_ylabel('Expression Level', fontsize=16)
+        ax.tick_params(axis='y', labelsize=14)
         ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
+        ax.yaxis.get_offset_text().set_fontsize(14)
 
     plt.tight_layout()
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        safe_name = display_name.replace(' ', '_').replace(';', '').replace('/', '_')
+        filepath = join(output_dir, f'expression_distribution_{safe_name}.png')
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        print(f'Saved to: {filepath}')
+
+    plt.close()
     return fig
 
 
+def main(protein_name, output_dir=None):
+    csv_dir = str(CSVS_DIR / 'relevant_dataframes_per_norm_type')
+    data_dict = load_protein_data(csv_dir)
+    plot_protein_expression(protein_name, data_dict, output_dir=output_dir)
+
+
 if __name__ == '__main__':
-    # protein_name = "DNA-directed RNA polymerases I and III subunit RPAC2"
-    # protein_name = "Thioredoxin"
-    protein_name = "UV excision repair protein RAD23 homolog B"
+    # PROTEIN_NAME = " Thioredoxin"
+    # PROTEIN_NAME = " Annexin A7"
+    # PROTEIN_NAME = " Gelsolin"
+    # PROTEIN_NAME = " Actin, cytoplasmic 2"
+    # PROTEIN_NAME = " Cornulin"
+    # PROTEIN_NAME = " Proliferation marker protein Ki-67"
+    # PROTEIN_NAME = " 14-3-3 protein beta/alpha"
+    # PROTEIN_NAME = " Ubiquitin-conjugating enzyme E2 L3"
+    PROTEIN_NAME = " Elongation factor 1-alpha 1"
 
-    csv_dir = "CSVs"
-    proteomics_df = pd.read_excel(join(csv_dir, '2projects combined-proteinGroups-genes.xlsx'))
+    OUTPUT_DIR = None  # set to a path to save the figure
 
-    # Get protein row once:
-    protein_row = get_protein_row(protein_name, proteomics_df)
-    if protein_row is not None:
-        fig = plot_protein_expression(protein_row, proteomics_df)
-        plt.show()
-        #     plt.savefig('protein_expression_scatter.png', dpi=300, bbox_inches='tight')
-        plt.close()
+    main(PROTEIN_NAME, output_dir=OUTPUT_DIR)
