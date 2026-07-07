@@ -33,13 +33,13 @@ def create_protein_analysis_dataframe(csv_file, norm_type):
             if patient not in patient_measurements:
                 patient_measurements[patient] = []
 
-            if measurement > 0:  # Only include non-zero measurements
-                patient_measurements[patient].append(measurement)
+            patient_measurements[patient].append(measurement)
 
-        # Calculate CVs for patients with multiple measurements
+        # Calculate CVs for patients with at least one non-zero measurement
         for patient, measurements in patient_measurements.items():
-            if len(measurements) > 2:  # Require at least 3 measurements
-                cv = np.std(measurements) / np.mean(measurements)
+            mean_val = np.mean(measurements)
+            if mean_val > 0:  # Exclude all-zeros patients (CV = 0/0 undefined)
+                cv = np.std(measurements) / mean_val
                 patient_cvs[patient] = cv
 
         avg_cv = np.mean(list(patient_cvs.values())) if patient_cvs else np.nan
